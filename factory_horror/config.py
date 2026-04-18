@@ -1,18 +1,36 @@
+import math
+
 # Display
 SCREEN_W, SCREEN_H = 1280, 720
 TITLE = "The Empty Shift — Factory Horror"
 FPS = 60
+# First-person raycast
+FOV_RAD = math.pi * 0.52
+MOUSE_SENS = 0.0022
+RAY_STRIDE = 2  # draw every Nth column (2 = half rays, faster)
 
 # World (pixels)
 TILE = 48
 PLAYER_RADIUS = 14
 ROBOT_RADIUS = 16
-ROBOT_SPEED = 95  # only applied while player moves
+ROBOT_SPEED = 95  # base; scales up with aggro (files + valves)
 PLAYER_SPEED = 220
-# Lit area around player (larger = easier to see; horror is edge vignette only)
-FLASHLIGHT_RADIUS = 420
-FLASHLIGHT_EDGE_ALPHA = 95  # darkness at screen edges (lower = clearer gameplay)
+# Aggro 0..1 from files + valves: speed multiplier approaches this at full aggro
+ROBOT_SPEED_MULT_MAX = 1.95
+# Lead target along player velocity (seconds * aggro); higher = smarter cutting-off
+ROBOT_LEAD_MAX_SEC = 0.42
+# Use 2 movement substeps when aggro exceeds this (better corner pursuit)
+ROBOT_SUBSTEP_AGGRO_THRESHOLD = 0.42
+# Flashlight: small bright core, very dark everywhere else
+FLASHLIGHT_RADIUS = 200
+FLASHLIGHT_EDGE_ALPHA = 242  # unlit areas (higher = darker)
+FLASHLIGHT_FALLOFF = 2.6  # >1 = tighter beam edge
 ROBOT_CATCH_DIST = PLAYER_RADIUS + ROBOT_RADIUS + 4
+
+# First (red) door: both valves + this many files
+FIRST_DOOR_FILES_NEEDED = 2
+# Rescue / final door / exit: need this many files and both valves (terminal_on)
+TOTAL_EVIDENCE_FILES = 3
 
 # Colors (muted industrial horror)
 BG_DARK = (12, 14, 18)

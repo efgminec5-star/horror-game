@@ -4,10 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Set, Tuple
 
-from .config import PLAYER_RADIUS, ROBOT_RADIUS, ROBOT_SPEED, PLAYER_SPEED, TILE
-
-
-Vec2 = Tuple[float, float]
+from .config import MOUSE_SENS, PLAYER_RADIUS, ROBOT_RADIUS, ROBOT_SPEED, PLAYER_SPEED, TILE
 
 
 def circle_wall_collision(
@@ -42,36 +39,60 @@ def circle_wall_collision(
 class Player:
     x: float
     y: float
-    vx: float = 0.0
-    vy: float = 0.0
+    angle: float = 0.0  # radians; 0 = +X east, pi/2 = +Y south (screen down)
+    vel_x: float = 0.0
+    vel_y: float = 0.0
 
-    def update(self, dt: float, walls: Set[Tuple[int, int]], keys) -> bool:
+    def update_fps(
+        self,
+        dt: float,
+        walls: Set[Tuple[int, int]],
+        keys,
+        mouse_dx: float,
+        mouse_active: bool,
+    ) -> bool:
         import pygame
 
-        moving = False
-        self.vx = 0.0
-        self.vy = 0.0
+        if mouse_active:
+            self.angle += mouse_dx * MOUSE_SENS
+
+        fx = math.cos(self.angle)
+        fy = math.sin(self.angle)
+        rdx = -math.sin(self.angle)
+        rdy = math.cos(self.angle)
+
+        mx = 0.0
+        my = 0.0
         if keys[pygame.K_w] or keys[pygame.K_UP]:
-            self.vy = -PLAYER_SPEED
-            moving = True
+            mx += fx
+            my += fy
         if keys[pygame.K_s] or keys[pygame.K_DOWN]:
-            self.vy = PLAYER_SPEED
-            moving = True
+            mx -= fx
+            my -= fy
         if keys[pygame.K_a] or keys[pygame.K_LEFT]:
-            self.vx = -PLAYER_SPEED
-            moving = True
+            mx -= rdx
+            my -= rdy
         if keys[pygame.K_d] or keys[pygame.K_RIGHT]:
-            self.vx = PLAYER_SPEED
-            moving = True
-        if self.vx and self.vy:
-            self.vx *= 0.70710678
-            self.vy *= 0.70710678
-        nx = self.x + self.vx * dt
-        ny = self.y + self.vy * dt
-        nx, self.y = circle_wall_collision(nx, self.y, PLAYER_RADIUS, walls)
-        self.x, ny = circle_wall_collision(self.x, ny, PLAYER_RADIUS, walls)
+            mx += rdx
+            my += rdy
+
+        moving = mx != 0.0 or my != 0.0
+        if moving:
+            ln = math.hypot(mx, my)
+            mx /= ln
+            my /= ln
+
+        old_x, old_y = self.x, self.y
+        nx = self.x + mx * PLAYER_SPEED * dt
+        ny = self.y + my * PLAYER_SPEED * dt
+        for _ in range(4):
+            nx, ny = circle_wall_collision(nx, ny, PLAYER_RADIUS, walls)
         self.x = nx
         self.y = ny
+
+        dt = max(dt, 1e-6)
+        self.vel_x = (self.x - old_x) / dt
+        self.vel_y = (self.y - old_y) / dt
         return moving
 
 
@@ -80,7 +101,15 @@ class Robot:
     x: float
     y: float
 
-    def step_toward(self, tx: float, ty: float, dt: float, walls: Set[Tuple[int, int]]):
+    def step_toward(
+        self,
+        tx: float,
+        ty: float,
+        dt: float,
+        walls: Set[Tuple[int, int]],
+        speed: float | None = None,
+    ):
+        sp = ROBOT_SPEED if speed is None else speed
         dx = tx - self.x
         dy = ty - self.y
         dist = math.hypot(dx, dy)
@@ -88,12 +117,12 @@ class Robot:
             return
         dx /= dist
         dy /= dist
-        step = ROBOT_SPEED * dt
+        step = sp * dt
         if step > dist:
             step = dist
         nx = self.x + dx * step
         ny = self.y + dy * step
-        nx, self.y = circle_wall_collision(nx, self.y, ROBOT_RADIUS, walls)
-        self.x, ny = circle_wall_collision(self.x, ny, ROBOT_RADIUS, walls)
+        for _ in range(3):
+            nx, ny = circle_wall_collision(nx, ny, ROBOT_RADIUS, walls)
         self.x = nx
         self.y = ny
