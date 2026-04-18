@@ -27,10 +27,10 @@ FLASHLIGHT_EDGE_ALPHA = 242  # unlit areas (higher = darker)
 FLASHLIGHT_FALLOFF = 2.6  # >1 = tighter beam edge
 ROBOT_CATCH_DIST = PLAYER_RADIUS + ROBOT_RADIUS + 4
 
-# First (red) door: both valves + this many files
+# First (red) door: all valves + this many files
 FIRST_DOOR_FILES_NEEDED = 2
-# Rescue / final door / exit: need this many files and both valves (terminal_on)
-TOTAL_EVIDENCE_FILES = 3
+# Rescue / final door / exit: need this many files and all valves (terminal_on)
+TOTAL_EVIDENCE_FILES = 5
 
 # Colors (muted industrial horror)
 BG_DARK = (12, 14, 18)

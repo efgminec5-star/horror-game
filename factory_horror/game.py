@@ -60,13 +60,14 @@ class Game:
         self.final_doors: Set[Tuple[int, int]] = set(m.final_doors)
         self.player = Player(m.player_start[0], m.player_start[1], angle=0.0)
         self.robots = [Robot(rx, ry) for rx, ry in m.robot_starts]
-        while len(self.robots) < 3:
+        while len(self.robots) < 5:
             self.robots.append(
                 Robot(m.player_start[0] + 140, m.player_start[1] + 100)
             )
         self.evidence_count = 0
         self.valve_a = False
         self.valve_b = False
+        self.valve_c = False
         self.terminal_on = False
         self.valves = list(m.valves)
         self.terminals = list(m.terminals)
@@ -87,7 +88,9 @@ class Game:
 
     def _robot_aggro(self) -> float:
         ev = self.evidence_count / float(max(TOTAL_EVIDENCE_FILES, 1))
-        valves = (int(self.valve_a) + int(self.valve_b)) / 2.0
+        valves = (
+            int(self.valve_a) + int(self.valve_b) + int(self.valve_c)
+        ) / 3.0
         return min(1.0, 0.5 * ev + 0.5 * valves)
 
     def _forward_dot(self, wx: float, wy: float) -> float:
@@ -149,9 +152,11 @@ class Game:
         if kind == "valve":
             if payload == 0:
                 self.valve_a = not self.valve_a
-            else:
+            elif payload == 1:
                 self.valve_b = not self.valve_b
-            self.terminal_on = self.valve_a and self.valve_b
+            else:
+                self.valve_c = not self.valve_c
+            self.terminal_on = self.valve_a and self.valve_b and self.valve_c
         elif kind == "evidence":
             self.evidence_tiles.pop(payload)
             self.evidence_count += 1
@@ -199,7 +204,7 @@ class Game:
         for i, (vx, vy) in enumerate(self.valves):
             sx = vx * TILE + TILE / 2
             sy = vy * TILE + TILE / 2
-            on = self.valve_a if i == 0 else self.valve_b
+            on = (self.valve_a, self.valve_b, self.valve_c)[i] if i < 3 else False
             col = (80, 140, 200) if on else (60, 70, 90)
             sprites.append((sx, sy, TILE * 0.55, col, 0))
 
@@ -451,8 +456,8 @@ class Game:
                 "ROBOTS only crawl toward you while YOU move — they get faster and meaner as",
                 "you collect FILES and bring VALVES online.",
                 "",
-                "FIRST RED DOOR: both VALVES on, first 2 FILES, then E while facing the door.",
-                "SAVE ELIAS: keep valves on, ALL 3 FILES, E on FINAL door, then reach green EXIT.",
+                "FIRST RED DOOR: all 3 VALVES on, first 2 FILES, then E while facing the door.",
+                "SAVE ELIAS: keep all valves on, ALL 5 FILES, E on FINAL door, then reach green EXIT.",
                 "",
                 "Press ENTER to begin (mouse will be captured for look).",
             ]
@@ -508,7 +513,7 @@ class Game:
             ov = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
             ov.fill((0, 40, 30, 210))
             self.screen.blit(ov, (0, 0))
-            t = self.font.render("Both valves held. Every file accounted for. You get Elias out alive.", True, (200, 255, 220))
+            t = self.font.render("All valves held. Every file accounted for. You get Elias out alive.", True, (200, 255, 220))
             self.screen.blit(t, (SCREEN_W // 2 - t.get_width() // 2, SCREEN_H // 2 - 20))
             t2 = self.font_small.render("R — play again   ESC — quit", True, (220, 240, 230))
             self.screen.blit(t2, (SCREEN_W // 2 - t2.get_width() // 2, SCREEN_H // 2 + 20))
