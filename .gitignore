@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+.env
+*.egg-info/
+.pytest_cache/
+
+# Nested editor config (keep root `.cursor/` if you track it)
+factory_horror/.cursor/
