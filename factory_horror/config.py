@@ -2,7 +2,7 @@ import math
 
 # Display
 SCREEN_W, SCREEN_H = 1280, 720
-TITLE = "The Empty Shift — Factory Horror"
+TITLE = "Factory horror game 2"
 FPS = 60
 # First-person raycast
 FOV_RAD = math.pi * 0.52

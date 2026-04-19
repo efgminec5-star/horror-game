@@ -1,5 +1,5 @@
 @echo off
-title The Empty Shift
+title Factory horror game 2
 cd /d "%~dp0"
 
 where py >nul 2>&1

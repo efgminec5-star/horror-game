@@ -562,7 +562,7 @@ class Game:
         self.screen.fill(BG_DARK)
         if self.state == State.INTRO:
             lines = [
-                "THE EMPTY SHIFT — FIRST PERSON",
+                "FACTORY HORROR GAME 2 — FIRST PERSON",
                 "",
                 "You are searching an abandoned packaging plant for Elias Crane,",
                 "missing six months. The night shift left recordings of 'statues' in the aisles.",
