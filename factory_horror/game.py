@@ -5,6 +5,8 @@ import math
 from enum import Enum, auto
 from typing import List, Optional, Set, Tuple
 
+import random as _rnd
+
 import pygame
 
 from .config import (
@@ -73,8 +75,66 @@ class Game:
         self.valves = list(m.valves)
         self.terminals = list(m.terminals)
         self.evidence_tiles = list(m.evidence)
+        self.machine_debris = self._gen_debris()
+        self.posters = self._gen_posters()
         self.state = State.INTRO
         self._caught_at_ms: Optional[int] = None
+
+    def _gen_debris(self) -> List[Tuple[float, float, int]]:
+        rng = _rnd.Random(99)
+        m = self.map_data
+        taken: set = set()
+        for p in m.valves + m.terminals + m.evidence + list(m.locked_doors) + list(m.final_doors):
+            taken.add(p)
+        px_t = int(m.player_start[0] // TILE)
+        py_t = int(m.player_start[1] // TILE)
+        for ddx in range(-2, 3):
+            for ddy in range(-2, 3):
+                taken.add((px_t + ddx, py_t + ddy))
+        for rx, ry in m.robot_starts:
+            taken.add((int(rx // TILE), int(ry // TILE)))
+        taken.add(m.exit_tile)
+        cands = [(tx, ty) for tx, ty in m.floor if (tx, ty) not in taken]
+        rng.shuffle(cands)
+        result: List[Tuple[float, float, int]] = []
+        for tx, ty in cands[:22]:
+            v = rng.randint(0, 4)
+            wx = tx * TILE + TILE / 2 + rng.uniform(-TILE * 0.12, TILE * 0.12)
+            wy = ty * TILE + TILE / 2 + rng.uniform(-TILE * 0.12, TILE * 0.12)
+            result.append((wx, wy, v))
+        return result
+
+    def _gen_posters(self) -> List[Tuple[float, float, int]]:
+        rng = _rnd.Random(77)
+        m = self.map_data
+        wall_set = set(m.walls)
+        taken: set = set()
+        for p in m.valves + m.terminals + m.evidence:
+            taken.add(p)
+        taken.add(m.exit_tile)
+        candidates: List[Tuple[int, int, float, float]] = []
+        for tx, ty in m.floor:
+            if (tx, ty) in taken:
+                continue
+            for ddx, ddy in [(0, -1), (0, 1), (-1, 0), (1, 0)]:
+                if (tx + ddx, ty + ddy) in wall_set:
+                    ox = -ddx * TILE * 0.36
+                    oy = -ddy * TILE * 0.36
+                    candidates.append((tx, ty, ox, oy))
+                    break
+        rng.shuffle(candidates)
+        result: List[Tuple[float, float, int]] = []
+        used: set = set()
+        var = 0
+        for tx, ty, ox, oy in candidates:
+            if (tx, ty) in used or len(result) >= 12:
+                continue
+            wx = tx * TILE + TILE / 2 + ox
+            wy = ty * TILE + TILE / 2 + oy
+            result.append((wx, wy, var % 5))
+            used.add((tx, ty))
+            var += 1
+        return result
 
     def _blocking_tiles(self) -> Set[Tuple[int, int]]:
         return self.walls | self.locked_doors | self.final_doors
@@ -267,7 +327,7 @@ class Game:
             int(base[2] * shade),
         )
 
-    def _draw_sprites(self, proj: float, aggro: float) -> None:
+    def _draw_sprites(self, proj: float, aggro: float, z_buffer: list) -> None:
         px, py = self.player.x, self.player.y
         ca = math.cos(self.player.angle)
         sa = math.sin(self.player.angle)
@@ -279,43 +339,143 @@ class Game:
                 int(c1[2] + (c2[2] - c1[2]) * u),
             )
 
-        sprites: List[Tuple[float, float, float, Tuple[int, int, int], int]] = []
+        _POSTER_BG = [(218, 205, 45), (230, 110, 25), (190, 28, 28), (38, 118, 60), (235, 235, 235)]
+        _POSTER_FG = [(18, 15, 8), (18, 15, 8), (240, 210, 15), (15, 15, 15), (185, 18, 18)]
+        _POSTER_LINES = [["SAFETY", "FIRST"], ["WEAR", "YOUR PPE"], ["DANGER!", "HIGH VOLT."], ["REPORT", "INCIDENTS"], ["NO", "ENTRY"]]
+
+        def _draw_poster(sc_x: int, sc_top: int, h: int, var: int) -> None:
+            bg = _POSTER_BG[var]
+            fg = _POSTER_FG[var]
+            lines = _POSTER_LINES[var]
+            pw = max(6, int(h * 0.58))
+            x0 = sc_x - pw // 2
+            border = max(1, h // 22)
+            pygame.draw.rect(self.screen, fg, (x0 - border, sc_top - border, pw + 2 * border, h + 2 * border))
+            pygame.draw.rect(self.screen, bg, (x0, sc_top, pw, h))
+            hdr_h = max(3, h // 6)
+            pygame.draw.rect(self.screen, fg, (x0, sc_top, pw, hdr_h))
+            area_top = sc_top + hdr_h + max(1, h // 14)
+            area_h = h - hdr_h - max(1, h // 14)
+            n = len(lines)
+            for i, line in enumerate(lines):
+                lh = max(1, area_h // (n * 2))
+                ly = area_top + int(i * area_h / n)
+                if h >= 45:
+                    txt_surf = self.font_small.render(line, True, fg)
+                    tw = min(pw - 4, txt_surf.get_width())
+                    th = max(2, lh * 2)
+                    txt_scaled = pygame.transform.scale(txt_surf, (tw, th))
+                    self.screen.blit(txt_scaled, (x0 + (pw - tw) // 2, ly))
+                else:
+                    lw = max(2, int(pw * (0.85 if i == 0 else 0.65)))
+                    pygame.draw.rect(self.screen, fg, (x0 + (pw - lw) // 2, ly + 1, lw, max(1, lh)))
+            if var == 2:
+                cx2, cy2 = sc_x, sc_top + h * 3 // 4
+                br = max(3, h // 10)
+                pts = [(cx2, cy2 - br), (cx2 + br, cy2 + br), (cx2 - br, cy2 + br)]
+                pygame.draw.polygon(self.screen, fg, pts)
+            elif var == 4:
+                cx2, cy2 = sc_x, sc_top + h * 3 // 4
+                cr = max(3, h // 10)
+                pygame.draw.circle(self.screen, fg, (cx2, cy2), cr)
+                pygame.draw.circle(self.screen, bg, (cx2, cy2), max(1, cr - max(1, cr // 3)))
+
+        def _draw_machine(sc_x: int, sc_top: int, h: int, var: int) -> None:
+            cy = sc_top + h // 2
+            if var == 0:
+                r = max(4, h // 2)
+                pygame.draw.circle(self.screen, (58, 28, 12), (sc_x, cy), r + 2)
+                pygame.draw.circle(self.screen, (108, 52, 22), (sc_x, cy), r)
+                n_teeth = max(4, min(10, r // 3))
+                for i in range(n_teeth):
+                    a = 2 * math.pi * i / n_teeth
+                    tx2, ty2 = int(sc_x + (r - 1) * math.cos(a)), int(cy + (r - 1) * math.sin(a))
+                    tw2 = max(2, r // 4)
+                    pygame.draw.rect(self.screen, (58, 28, 12), (tx2 - tw2 // 2, ty2 - tw2 // 2, tw2, tw2))
+                pygame.draw.circle(self.screen, (58, 28, 12), (sc_x, cy), max(2, r // 3))
+            elif var == 1:
+                pw2, ph = max(8, h), max(3, h // 3)
+                pygame.draw.rect(self.screen, (55, 62, 60), (sc_x - pw2 // 2, cy - ph // 2, pw2, ph))
+                pygame.draw.rect(self.screen, (88, 50, 22), (sc_x - pw2 // 2, cy, pw2, max(1, ph // 3)))
+                fw = max(2, ph // 2)
+                for fx in [sc_x - pw2 // 2, sc_x + pw2 // 2 - fw]:
+                    pygame.draw.rect(self.screen, (40, 46, 44), (fx, cy - ph // 2 - fw, fw, ph + fw * 2))
+                pygame.draw.rect(self.screen, (30, 36, 34), (sc_x - pw2 // 2, cy - ph // 2, pw2, ph), 1)
+            elif var == 2:
+                bw2, bh = max(5, h // 2), max(8, int(h * 0.8))
+                bx2, by2 = sc_x - bw2 // 2, cy - bh // 2
+                pygame.draw.rect(self.screen, (44, 58, 46), (bx2, by2, bw2, bh))
+                for frac in [0.2, 0.5, 0.8]:
+                    pygame.draw.rect(self.screen, (30, 32, 36), (bx2, by2 + int(bh * frac), bw2, max(1, bh // 10)))
+                pygame.draw.rect(self.screen, (98, 52, 18), (bx2 + bw2 // 4, by2 + bh // 3, max(2, bw2 // 3), max(2, bh // 8)))
+                pygame.draw.rect(self.screen, (22, 36, 26), (bx2, by2, bw2, bh), 1)
+            elif var == 3:
+                cw2, ch = max(10, int(h * 1.3)), max(3, h // 3)
+                cx0, cy0 = sc_x - cw2 // 2, cy - ch // 2
+                pygame.draw.rect(self.screen, (48, 50, 56), (cx0, cy0 - ch // 2, cw2, ch * 2))
+                pygame.draw.rect(self.screen, (30, 28, 26), (cx0, cy0, cw2, ch))
+                nslt = max(2, cw2 // 7)
+                for i in range(nslt):
+                    sx2 = cx0 + i * (cw2 // nslt)
+                    pygame.draw.line(self.screen, (40, 38, 36), (sx2, cy0), (sx2, cy0 + ch))
+                pygame.draw.rect(self.screen, (32, 34, 40), (cx0, cy0 - ch // 2, cw2, ch * 2), 1)
+            else:
+                bw3, bh3 = max(5, int(h * 0.52)), max(8, int(h * 0.88))
+                bx3, by3 = sc_x - bw3 // 2, cy - bh3 // 2
+                pygame.draw.rect(self.screen, (50, 52, 60), (bx3, by3, bw3, bh3))
+                pygame.draw.rect(self.screen, (28, 30, 36), (bx3, by3, bw3, bh3), 1)
+                pygame.draw.line(self.screen, (20, 22, 28), (sc_x, by3 + 2), (sc_x, by3 + bh3 - 2))
+                hw3, hh3 = max(2, bw3 // 6), max(2, bh3 // 8)
+                for hfy in [bh3 // 4, 3 * bh3 // 4]:
+                    pygame.draw.rect(self.screen, (33, 34, 42), (bx3 + bw3 - hw3 - 1, by3 + hfy - hh3 // 2, hw3, hh3))
+                sw3, sh3 = max(3, bw3 // 3), max(2, bh3 // 6)
+                pygame.draw.rect(self.screen, (215, 175, 18), (sc_x - sw3 // 2, cy - sh3 // 2, sw3, sh3))
+                pygame.draw.rect(self.screen, (18, 18, 18), (sc_x - sw3 // 2, cy - sh3 // 2, sw3, sh3), 1)
+
+        sprites: List[Tuple[float, float, float, Tuple[int, int, int], int, int]] = []
         for i, (vx, vy) in enumerate(self.valves):
             sx = vx * TILE + TILE / 2
             sy = vy * TILE + TILE / 2
             on = (self.valve_a, self.valve_b, self.valve_c)[i] if i < 3 else False
             col = (80, 140, 200) if on else (60, 70, 90)
-            sprites.append((sx, sy, TILE * 0.55, col, 0))
+            sprites.append((sx, sy, TILE * 0.55, col, 0, 0))
 
         for tx, ty in self.terminals:
             sx = tx * TILE + TILE / 2
             sy = ty * TILE + TILE / 2
             col = (100, 220, 120) if self.terminal_on else (70, 75, 80)
-            sprites.append((sx, sy, TILE * 0.5, col, 0))
+            sprites.append((sx, sy, TILE * 0.5, col, 0, 0))
 
         for tx, ty in self.evidence_tiles:
             sx = tx * TILE + TILE / 2
             sy = ty * TILE + TILE / 2
-            sprites.append((sx, sy, TILE * 0.5, (160, 140, 200), 0))
+            sprites.append((sx, sy, TILE * 0.5, (160, 140, 200), 0, 0))
 
         ex, ey = self.map_data.exit_tile
         sprites.append(
-            (ex * TILE + TILE / 2, ey * TILE + TILE / 2, TILE * 0.65, (50, 90, 70), 0)
+            (ex * TILE + TILE / 2, ey * TILE + TILE / 2, TILE * 0.65, (50, 90, 70), 0, 0)
         )
 
         shell = _lerp((35, 38, 45), (72, 28, 32), aggro)
         body = _lerp(ACCENT, (240, 55, 55), aggro)
         for r in self.robots:
-            sprites.append((r.x, r.y, TILE * 0.64, body, 1))
+            sprites.append((r.x, r.y, TILE * 0.64, body, 1, 0))
+
+        for wx, wy, var in self.machine_debris:
+            sprites.append((wx, wy, TILE * 0.7, (0, 0, 0), 2, var))
+
+        for wx, wy, var in self.posters:
+            sprites.append((wx, wy, TILE * 1.1, (0, 0, 0), 3, var))
 
         def depth_key(s):
-            wx, wy, _, _, tag = s
+            wx, wy = s[0], s[1]
             dx, dy = wx - px, wy - py
             return -(dx * ca + dy * sa)
 
         sprites.sort(key=depth_key)
 
-        for wx, wy, spr_h, col, is_robot in sprites:
+        spr_surf = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
+        for wx, wy, spr_h, col, kind, variant in sprites:
             dx = wx - px
             dy = wy - py
             depth = dx * ca + dy * sa
@@ -327,7 +487,10 @@ class Game:
             if h < 2 or screen_x < -h or screen_x > SCREEN_W + h:
                 continue
             top = SCREEN_H // 2 - h // 2
-            if is_robot:
+            spr_surf.fill((0, 0, 0, 0))
+            real_screen = self.screen
+            self.screen = spr_surf
+            if kind == 1:
                 # Box head + thin torso + arms + legs (billboard)
                 head_w = max(8, int(h * 0.58))
                 head_h = max(5, int(h * 0.19))
@@ -432,8 +595,18 @@ class Game:
                     pygame.draw.ellipse(self.screen, shell, sh_rect.inflate(2, 2))
                     pygame.draw.ellipse(self.screen, leg_col, sh_rect)
                     pygame.draw.ellipse(self.screen, joint_ring, sh_rect, 1)
+            elif kind == 2:
+                _draw_machine(screen_x, top, h, variant)
+            elif kind == 3:
+                _draw_poster(screen_x, top, h, variant)
             else:
                 pygame.draw.rect(self.screen, col, (screen_x - h // 2, top, h, h))
+            self.screen = real_screen
+            x_start = max(0, screen_x - h)
+            x_end = min(SCREEN_W, screen_x + h)
+            for c in range(x_start, x_end):
+                if depth < z_buffer[c]:
+                    self.screen.blit(spr_surf, (c, 0), area=(c, 0, 1, SCREEN_H))
 
     def _draw_fps_world(self) -> None:
         m = self.map_data
@@ -451,6 +624,7 @@ class Game:
         plane_y = math.cos(angle) * math.tan(FOV_RAD / 2)
         proj = (SCREEN_W / 2) / math.tan(FOV_RAD / 2)
 
+        z_buffer = [float("inf")] * SCREEN_W
         for col in range(0, SCREEN_W, RAY_STRIDE):
             camera_x = 2 * col / float(SCREEN_W) - 1.0
             ray_dx = dir_x + plane_x * camera_x
@@ -469,13 +643,15 @@ class Game:
             rel = ray_angle - angle
             perp = dist * math.cos(rel)
             perp = max(perp, 0.001)
+            for c in range(col, min(col + RAY_STRIDE, SCREEN_W)):
+                z_buffer[c] = perp
             line_h = int((TILE * proj) / perp)
             line_h = min(line_h, SCREEN_H * 2)
             top = SCREEN_H // 2 - line_h // 2
             rgb = self._wall_rgb(mtx, mty, side, dist)
             pygame.draw.rect(self.screen, rgb, (col, top, RAY_STRIDE, line_h))
 
-        self._draw_sprites(proj, self._robot_aggro())
+        self._draw_sprites(proj, self._robot_aggro(), z_buffer)
 
         dark = pygame.Surface((SCREEN_W, SCREEN_H), pygame.SRCALPHA)
         dark.fill((0, 0, 0, FLASHLIGHT_EDGE_ALPHA))

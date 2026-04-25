@@ -1,6 +1,7 @@
 @echo off
 title Factory horror game 2
 cd /d "%~dp0"
+set PATH=C:\Program Files\Python313;C:\Program Files\Python313\Scripts;%PATH%
 
 where py >nul 2>&1
 if %errorlevel% equ 0 (
